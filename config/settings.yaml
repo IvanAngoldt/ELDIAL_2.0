@@ -1,0 +1,19 @@
+app:
+  name: ElDial
+  version: "1.0.0"
+  debug: false
+
+database:
+  url: postgresql://eldial:eldial@localhost:5432/eldial_db
+  use_sqlite_fallback: true
+  sqlite_path: data/eldial.sqlite3
+
+computation:
+  max_iterations: 5000
+  convergence_tolerance: 1.0e-6
+  default_grid_nodes: 100
+
+paths:
+  reports_dir: reports/output
+  exports_dir: data/exports
+  logs_dir: logs
