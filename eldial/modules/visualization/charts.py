@@ -34,9 +34,9 @@ class ChartBuilder:
         ax.plot(times, c_conc, "s--", color="#d97706", linewidth=2, label="Концентратная камера")
         ax.set_xlabel("Время, мин")
         ax.set_ylabel("Концентрация NaCl, г/л")
-        ax.set_title("Изменение концентрации в ходе электродиализа")
-        ax.legend()
-        ax.grid(True, alpha=0.3)
+        ax.set_title("Изменение концентрации NaCl в ходе электродиализа", fontsize=13)
+        ax.legend(framealpha=0.9)
+        ax.grid(True, alpha=0.3, linestyle="--")
         fig.tight_layout()
 
         path = output_path or self.config.exports_dir / "concentration_profile.png"
@@ -54,8 +54,8 @@ class ChartBuilder:
         ax.fill_between(times, j, alpha=0.2, color="#2e7d9a")
         ax.set_xlabel("Время, мин")
         ax.set_ylabel("Плотность тока, А/м²")
-        ax.set_title("Плотность тока вдоль процесса")
-        ax.grid(True, alpha=0.3)
+        ax.set_title("Динамика плотности тока в процессе электродиализа", fontsize=13)
+        ax.grid(True, alpha=0.3, linestyle="--")
         fig.tight_layout()
 
         path = output_path or self.config.exports_dir / "current_density.png"
