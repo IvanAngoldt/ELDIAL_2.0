@@ -25,7 +25,8 @@ class NernstPlanckSolver:
 
     def build_initial_concentration(self) -> np.ndarray:
         """Начальное распределение концентрации в разбавительной камере."""
-        c0 = self.params.initial_diluate_concentration_g_l / 58.44  # г/л -> моль/м³ (NaCl)
+        molar_mass_nacl = 58.44  # г/моль
+        c0 = self.params.initial_diluate_concentration_g_l / molar_mass_nacl
         return np.full(self.nx, c0)
 
     def build_electric_field(self, voltage: float) -> np.ndarray:
@@ -63,6 +64,7 @@ class NernstPlanckSolver:
         voltage = self.params.voltage_v
         dt = self.params.time_step_s
 
+        residual = float("inf")
         for iteration in range(max_iter):
             c_old = c.copy()
             c = self.crank_nicolson_step(c, dt, voltage)
@@ -71,7 +73,9 @@ class NernstPlanckSolver:
                 return c, iteration + 1
 
         raise ModelError(
-            f"Сходимость не достигнута за {max_iter} итераций (остаток={residual:.2e})"
+            f"Сходимость не достигнута за {max_iter} итераций: "
+            f"остаток={residual:.2e}, допуск={tolerance:.2e}. "
+            "Попробуйте уменьшить шаг по времени или увеличить max_iterations."
         )
 
     def compute_current_profile(self, concentration: np.ndarray, voltage: float) -> np.ndarray:
