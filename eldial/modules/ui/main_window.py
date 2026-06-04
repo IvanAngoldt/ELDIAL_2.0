@@ -51,7 +51,7 @@ class MainWindow:
 
         status = tk.Label(
             body,
-            text=f"ElDial v{__version__} | Python 3.10 · NumPy · Matplotlib · SQLite",
+            text=f"ElDial v{__version__} | Python 3.10 · Tkinter · NumPy · Matplotlib · PostgreSQL",
             font=("Helvetica", 9),
             fg="#64748b",
         )
