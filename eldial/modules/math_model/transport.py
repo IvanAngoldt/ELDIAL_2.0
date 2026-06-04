@@ -57,14 +57,22 @@ class TransportEquations:
         return charge_number * FARADAY_CONSTANT * ion_flux
 
     def membrane_resistance(self) -> float:
-        """Удельное сопротивление мембранного стека."""
+        """Удельное сопротивление мембранного стека (Ом).
+
+        Формула: R = 2 * N * rho / S, где N — число пар мембран,
+        rho — удельное сопротивление (Ом·м), S — эффективная площадь (м²).
+        """
         n_pairs = self.membrane.membrane_pairs
         rho_m = self.membrane.membrane_resistivity_ohm_m
         area = self.membrane.effective_area_m2
         return 2 * n_pairs * rho_m / area
 
     def limiting_current_density(self, bulk_concentration_mol_m3: float) -> float:
-        """Предельная плотность тока (упрощённая оценка)."""
+        """Предельная плотность тока (А/м²), упрощённая оценка Лева.
+
+        Формула: j_lim = z * F * D * C_bulk / delta,
+        где delta — толщина диффузионного слоя (м).
+        """
         d = self.membrane.diffusion_coefficient_m2_s
         delta = self.membrane.channel_thickness_mm * 1e-3
         z = 1
