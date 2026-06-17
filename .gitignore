@@ -1,0 +1,18 @@
+__pycache__/
+*.pyc
+.venv/
+.pytest_cache/
+*.egg-info/
+# артефакты сборки PyInstaller
+build/
+dist/
+*.spec
+# результаты прогонов
+ELDIAL.RES
+*.res
+*.RES
+eldial_layers.csv
+eldial_profiles.csv
+data/ELDIAL.RES
+data/eldial_layers.csv
+data/eldial_profiles.csv
