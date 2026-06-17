@@ -3,6 +3,10 @@ __pycache__/
 .venv/
 .pytest_cache/
 *.egg-info/
+# системный/редакторский мусор
+.DS_Store
+.vscode/
+.claude/
 # артефакты сборки PyInstaller
 build/
 dist/
