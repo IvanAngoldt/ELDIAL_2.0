@@ -26,6 +26,18 @@ from .params import Params
 
 F_FARADAY = 96485.0  # Кл/моль — постоянная Фарадея (для пересчёта в физические величины)
 
+# Минимально допустимая безразмерная концентрация у поверхности мембраны.
+C_FLOOR = 1.0e-4
+
+# Коэффициент ЭДС концентрационной поляризации (приближение символической ф-лы 5.33).
+# В источнике замкнутая форма ЭДС не приведена; её структура (диффузионный/доннановский
+# потенциал ∝ ln отношений концентраций, ф-ла 5.16) воспроизведена с одним эффективным
+# коэффициентом. Значение 1.5 откалибровано по одной точке (задача 1, dpsi=10 → Y=0.25)
+# и независимо воспроизводит омические точки задач 2 и 3 (dpsi=10/20/30). На полке
+# (предельный ток) ЭДС не влияет, поэтому проектные ответы и совпадение с оригиналом
+# ELDIAL сохраняются. EMF_COEF=0 отключает поправку (чистая омическая связь).
+EMF_COEF = 1.5
+
 
 def velocity_profile(X: List[float], parys: float) -> List[float]:
     """Безразмерный профиль скорости V(X), нормированный на среднее = 1.
@@ -110,9 +122,20 @@ class Engine:
         S = self._trapz([1.0 / max(c, 1e-9) for c in C])
         return 2.0 * self.P.tp * self.P.tn * (self.P.rac + S + 1.0 / self.P.cb)
 
+    def emf(self, C: List[float]) -> float:
+        """ЭДС концентрационной поляризации ΔE (приближение ф-лы 5.33).
+
+        Диффузионный/доннановский потенциал ∝ ln отношения объёмной концентрации
+        к пристеночной у каждой мембраны (ф-ла 5.16). Растёт по мере обеднения и
+        снижает движущее напряжение. При C ≡ 1 (вход) равна нулю.
+        """
+        Cmax = max(C)
+        return EMF_COEF * (math.log(Cmax / max(C[-1], C_FLOOR))
+                           + math.log(Cmax / max(C[0], C_FLOOR)))
+
     def current(self, C: List[float]) -> float:
-        """Локальная безразмерная плотность тока I = dpsi / R(C)."""
-        return max(self.P.dpsi / self.resistance(C), 0.0)
+        """Локальная безразмерная плотность тока I = (dpsi − ΔE) / R(C)."""
+        return max((self.P.dpsi - self.emf(C)) / self.resistance(C), 0.0)
 
     def initial_current(self) -> float:
         """Ток на входе (C ≡ 1)."""
@@ -178,6 +201,46 @@ class Engine:
             x[i] = dp[i] - cp[i] * x[i + 1]
         return x
 
+    # ----------------------- согласование тока со скачком потенциала -----------------------
+    def _solve_current(self, A: List[float], B: List[float]) -> float:
+        """Ток I из связи I=(dpsi−ΔE)/R(C), где C(I)=A+I·B (линеен по току).
+
+        φ(I)=I−(dpsi−ΔE)/R монотонно возрастает; корень ищется бисекцией на
+        ``[0, I_lim]`` (I_lim — ток, при котором стенка достигает :data:`C_FLOOR`).
+        Если ``φ(I_lim) ≤ 0`` — предельный режим, I=I_lim (стенка на полу).
+        """
+        N, P = self.N, self.P
+        floor = C_FLOOR
+
+        # предельный ток: минимальный I>0, при котором какой-либо узел достигает пола
+        I_lim = math.inf
+        for j in range(N + 1):
+            if B[j] < -1e-300:                   # узел обедняется с ростом тока
+                Ij = (floor - A[j]) / B[j]
+                if 0.0 <= Ij < I_lim:
+                    I_lim = Ij
+        if not math.isfinite(I_lim) or I_lim <= 0.0:
+            return 0.0
+
+        def phi(I: float) -> float:
+            C = [A[j] + I * B[j] for j in range(N + 1)]
+            return I - max(P.dpsi - self.emf(C), 0.0) / self.resistance(C)
+
+        if phi(I_lim) <= 0.0:                     # омический ток ≥ предельного → полка
+            return I_lim
+
+        lo, hi = 0.0, I_lim                       # φ(0)<0, φ(I_lim)>0 — корень внутри
+        tol = max(P.epsac, 1e-9)
+        for _ in range(100):
+            mid = 0.5 * (lo + hi)
+            if phi(mid) > 0.0:
+                hi = mid
+            else:
+                lo = mid
+            if hi - lo < tol:
+                break
+        return 0.5 * (lo + hi)
+
     # ------------------------------- маршевый расчёт -------------------------------
     def march(self) -> Iterator[Layer]:
         """Генератор слоёв расчёта от Y=0 до ymax с шагом tau (адаптивным при lkr=1)."""
@@ -186,34 +249,34 @@ class Engine:
         kA = P.Tna - P.tn
         kK = P.Tpc - P.tp
         tau = P.tau
-        I = self.current(C)
         Y = 0.0
         iint = 0.0
         step = 0
         c1_prev = C[-1]
-        cp, denom, aL = self._prep_lhs(tau / dX ** 2)
-        cur_r = tau / dX ** 2
+        cur_r = None
+        cp = denom = aL = B = None
 
         while Y < P.ymax - 1e-12:
             r = tau / dX ** 2
-            if r != cur_r:                       # шаг изменился (адаптивный режим) — пересобрать СЛАУ
+            if r != cur_r:                       # шаг изменился — пересобрать СЛАУ и отклик B
                 cp, denom, aL = self._prep_lhs(r)
+                # B(X) — отклик профиля на единичный ток (только граничные потоки),
+                # не зависит от слоя, поэтому считается один раз на значение tau
+                db = [0.0] * (N + 1)
+                db[0] = -dX * kA
+                db[N] = -dX * kK
+                B = self._solve(db, cp, denom, aL)
                 cur_r = r
-            Cn = list(C)
-            # правая часть для внутренних узлов не зависит от тока — собираем один раз
+
+            # A(X) — профиль при нулевом токе: чистая диффузия предыдущего слоя
             d = [0.0] * (N + 1)
             for i in range(1, N):
-                d[i] = V[i] * Cn[i]
-            # итерационное согласование тока I со скачком потенциала dpsi
-            for _ in range(60):
-                d[0] = -dX * I * kA              # меняются только граничные правые части
-                d[N] = -dX * I * kK
-                C = [v if v > 0.0 else 0.0 for v in self._solve(d, cp, denom, aL)]
-                Inew = self.current(C)
-                if abs(Inew - I) < P.epsac:
-                    I = Inew
-                    break
-                I = 0.5 * (I + Inew)
+                d[i] = V[i] * C[i]
+            A = self._solve(d, cp, denom, aL)
+
+            # согласованный ток и итоговый профиль (с физическим полом C_FLOOR)
+            I = self._solve_current(A, B)
+            C = [max(A[j] + I * B[j], C_FLOOR) for j in range(N + 1)]
 
             iint += I * tau
             Y += tau
